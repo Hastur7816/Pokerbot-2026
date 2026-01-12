@@ -38,7 +38,7 @@ class Player(Bot):
 
         Returns:
         Nothing.
-        '''
+        ''' 
         my_bankroll = game_state.bankroll  # the total number of chips you've gained or lost from the beginning of the game to the start of this round
         # the total number of seconds your bot has left to play this game
         game_clock = game_state.game_clock
@@ -113,7 +113,7 @@ class Player(Bot):
                 return RaiseAction(min_raise)
         if CheckAction in legal_actions:  # check-call
             return CheckAction()
-        if random.random() < 0.25:
+        if random.random() < 0.5:
             return FoldAction()
         return CallAction()
 
