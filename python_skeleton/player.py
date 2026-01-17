@@ -33,7 +33,8 @@ def get_value(hand, board):
     tru_hand.extend(board)
     values=[]
     for card1 in tru_hand:
-        rem_cards=tru_hand.remove(card1)
+        rem_cards=tru_hand.copy()
+        rem_cards.remove(card1)
         a1=card1[0]
         b1=card1[1]
         if "T"==a1:
@@ -49,10 +50,11 @@ def get_value(hand, board):
         a1=int(a1)
         zeroes=0
         ones=0
+        val=0
         for card2 in rem_cards:
             a2=card2[0]
             b2=card2[1]
-            val=0
+            
             if b1==b2:
                 val+=2
             if "T"==a2:
@@ -80,15 +82,33 @@ def get_value(hand, board):
             else:
                 val-=diff
 
-            values.append(val)
+        values.append(val)
     return values
+
 def get_future(hand, table):
     pos=possible_cards(hand,table)
     megalist=[]
     for card in pos:
         megalist.append(get_value(hand.copy()+[card],table))
     return sum_it_all(megalist), len(pos)
-    
+
+def get_future_norm(hand, board):
+    future_sum,count=get_future(hand,board)
+    if count==0:
+        return 0
+    raw = future_sum/count
+    n = len(hand) + len(board) + 1
+    max_score = 25*n*(n-1)
+    return raw/max_score
+
+def get_value_norm(hand, board):
+    raw=sum(get_value(hand,board))
+    n=len(hand)+len(board)
+    max_score=25*n*(n-1)
+    if max_score==0:
+        return 0
+    return raw/max_score  
+
 def sum_it_all(megalist):
     minilist=[]
     for list in megalist:
@@ -204,7 +224,7 @@ class Player(Bot):
 
 
 
-    def get_action(self, game_state, round_state, active):
+    def get_action_old(self, game_state, round_state, active):
         '''
         Where the magic happens - your code should implement this function.
         Called any time the engine needs an action from your bot.
@@ -238,7 +258,7 @@ class Player(Bot):
 
         if DiscardAction in legal_actions:
             v0=get_value(my_cards[1:3],[])
-            v1=get_value(my_cards[0]+my_cards[2],[])
+            v1=get_value([my_cards[0],my_cards[2]],[])
             v2=get_value(my_cards[0:2],[])
             pothandval=[sum(v0),sum(v1),sum(v2)]
             ind=pothandval.index(max(pothandval))
@@ -246,17 +266,76 @@ class Player(Bot):
         cur=get_value(my_cards,board_cards)
         fut=get_future(my_cards,board_cards)
         fut=fut[0]/fut[1]
-        if fut<0:
+        if fut<0 and continue_cost>0:
             return FoldAction
-        if fut/cur<=1.1:
+        if fut/cur<=1.1 and continue_cost>0:
             return FoldAction
         if fut/cur<=1.3 and CheckAction in legal_actions:
             return CheckAction
         if fut/cur<=1.4 and CallAction in legal_actions:
             return CallAction
         if fut/cur>=1.3:
-            return RaiseAction(int((fut/cur)**.7*my_contribution//1))
+            min_raise, max_raise = round_state.raise_bounds()
+            amount = int((fut/cur)**0.7 * my_contribution)
+            amount = max(min_raise, min(amount, max_raise))
+            return RaiseAction(amount)
         return FoldAction
+    
+    def get_action(self, game_state, round_state, active):
+        '''
+        Where the magic happens - your code should implement this function.
+        Called any time the engine needs an action from your bot.
+
+        Arguments:
+        game_state: the GameState object.
+        round_state: the RoundState object.
+        active: your player's index.
+
+        Returns:
+        Your action.
+        '''
+        legal_actions = round_state.legal_actions()  # the actions you are allowed to take
+        # 0, 3, 4, or 5 representing pre-flop, flop, turn, or river respectively
+        street = round_state.street
+        my_cards = round_state.hands[active]  # your cards
+        board_cards = round_state.board  # the board cards
+        # the number of chips you have contributed to the pot this round of betting
+        my_pip = round_state.pips[active]
+        # the number of chips your opponent has contributed to the pot this round of betting
+        opp_pip = round_state.pips[1-active]
+        # the number of chips you have remaining
+        my_stack = round_state.stacks[active]
+        # the number of chips your opponent has remaining
+        opp_stack = round_state.stacks[1-active]
+        continue_cost = opp_pip - my_pip  # the number of chips needed to stay in the pot
+        # the number of chips you have contributed to the pot
+        my_contribution = STARTING_STACK - my_stack
+        # the number of chips your opponent has contributed to the pot
+        opp_contribution = STARTING_STACK - opp_stack
+        if DiscardAction in legal_actions:
+            v0=get_value(my_cards[1:3],[])
+            v1=get_value([my_cards[0],my_cards[2]],[])
+            v2=get_value(my_cards[0:2],[])
+            pothandval=[sum(v0),sum(v1),sum(v2)]
+            ind=pothandval.index(max(pothandval))
+            return DiscardAction(ind)
+        cur=get_value_norm(my_cards, board_cards)
+        fut=get_future_norm(my_cards, board_cards)
+        delta=fut-cur
+
+        if delta<-0.01 and FoldAction in legal_actions and continue_cost>0:
+            return FoldAction()
+        if delta<0.03 and CheckAction in legal_actions:
+            return CheckAction()
+        if delta<0.05 and CallAction in legal_actions:
+            return CallAction()
+        if RaiseAction in legal_actions:
+            min_raise,max_raise=round_state.raise_bounds()
+            aggression=min(1.0, max(0.0,delta/0.12))
+            amount=int(min_raise+aggression*(max_raise-min_raise))
+            return RaiseAction(amount)
+
+        return CheckAction() if CheckAction in legal_actions else FoldAction()
 
 
         
